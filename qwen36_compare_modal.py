@@ -70,6 +70,7 @@ def _serve(model: str, *quant_args: str) -> None:
         "--max-model-len", str(MAX_LEN),
         "--trust-remote-code",
         "--gpu-memory-utilization", "0.90",
+        "--enable-prefix-caching",   # required for the multi-turn cache-hit workload
         *quant_args,
     ]
     if USE_REASONING_PARSER:
@@ -85,8 +86,9 @@ def _serve(model: str, *quant_args: str) -> None:
     volumes=VOLUMES,
     scaledown_window=15 * MINUTES,   # stay warm this long after the last request
     timeout=30 * MINUTES,
-)
-@modal.concurrent(max_inputs=32)     # requests one replica handles before scaling out
+    max_containers=1,                # pin to ONE B200 so a saturation sweep measures
+)                                    # a single GPU, not an autoscaled fleet
+@modal.concurrent(max_inputs=300)    # one replica absorbs the whole 16->256 sweep
 @modal.web_server(port=VLLM_PORT, startup_timeout=30 * MINUTES)
 def serve_nvfp4():
     # --quantization modelopt tells vLLM to read the ModelOpt NVFP4 checkpoint
@@ -101,8 +103,9 @@ def serve_nvfp4():
     volumes=VOLUMES,
     scaledown_window=15 * MINUTES,
     timeout=30 * MINUTES,
+    max_containers=1,                # pin to ONE B200 (see serve_nvfp4)
 )
-@modal.concurrent(max_inputs=32)
+@modal.concurrent(max_inputs=300)
 @modal.web_server(port=VLLM_PORT, startup_timeout=30 * MINUTES)
 def serve_bf16():
     _serve(BF16_MODEL)  # no quantization flag -> plain BF16
